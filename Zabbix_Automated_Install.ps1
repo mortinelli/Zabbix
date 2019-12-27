@@ -15,15 +15,21 @@ $serverHostname =  Invoke-Command -ScriptBlock {hostname}
 
 
 # Asks the user for the IP address of their Zabbix server
-$ServerIP = Read-Host -Prompt 'What is your Zabbix server/proxy IP?'
+$ServerIP = "1.1.1.1"
 
+$Dir = "c:\Program Files\zabbix"
+$ZipfilePath = $Dir + "\zabbix.zip"
+$agentConfFilePath = $Dir + "\zabbix_agentd.conf"
+$agentExeFilePath = $Dir + "\zabbix_agentd.exe"
+$LogFilePath = $Dir + "\zabbix_agentd.log"
+$LogFileReplaceTo = "LogFile=" + $LogFilePath
 
 # Creates Zabbix DIR
-mkdir c:\zabbix
+mkdir $Dir
 
 
 # Downloads version 4.2.8 from Zabbix.com
-Invoke-WebRequest "https://www.zabbix.com/downloads/4.2.8/zabbix_agents-4.2.8-win-amd64.zip" -outfile c:\zabbix\zabbix.zip
+Invoke-WebRequest "https://www.zabbix.com/downloads/4.2.8/zabbix_agents-4.2.8-win-amd64.zip" -outfile $ZipfilePath
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Unzip
@@ -34,27 +40,33 @@ function Unzip
 }
 
 # Unzipping file to c:\zabbix
-Unzip "c:\Zabbix\zabbix.zip" "c:\zabbix"      
+Unzip $ZipfilePath $Dir      
 
 
 # Sorts files in c:\zabbix
-Move-Item c:\zabbix\bin\zabbix_agentd.exe -Destination c:\zabbix
+Move-Item ($Dir + "\bin\zabbix_agentd.exe") -Destination $Dir
 
 
 # Sorts files in c:\zabbix
-Move-Item c:\zabbix\conf\zabbix_agentd.conf -Destination c:\zabbix
+Move-Item ($Dir + "\conf\zabbix_agentd.conf") -Destination $Dir
 
 # Replaces 127.0.0.1 with your Zabbix server IP in the config file
-(Get-Content -Path c:\zabbix\zabbix_agentd.conf) | ForEach-Object {$_ -Replace '127.0.0.1', "$ServerIP"} | Set-Content -Path c:\zabbix\zabbix_agentd.conf
+(Get-Content -Path $agentConfFilePath) | ForEach-Object {$_ -Replace '127.0.0.1', "$ServerIP"} | Set-Content -Path $agentConfFilePath
 
 # Replaces hostname in the config file
-(Get-Content -Path c:\zabbix\zabbix_agentd.conf) | ForEach-Object {$_ -Replace 'Windows host', "$ServerHostname"} | Set-Content -Path c:\zabbix\zabbix_agentd.conf
+(Get-Content -Path $agentConfFilePath) | ForEach-Object {$_ -Replace 'Windows host', "$ServerHostname"} | Set-Content -Path $agentConfFilePath
+
+# Replace Log File Path
+(Get-Content -Path $agentConfFilePath) | ForEach-Object {$_ -Replace "LogFile=c:\\zabbix_agentd.log", $LogFileReplaceTo} | Set-Content -Path $agentConfFilePath
 
 # Attempts to install the agent with the config in c:\zabbix
-c:\zabbix\zabbix_agentd.exe --config c:\zabbix\zabbix_agentd.conf --install
+$expInstall = "& " + "'" + $agentExeFilePath + "'" +" --config " + "'" + $agentConfFilePath + "'" + " --install"
+Invoke-Expression $expInstall
 
 # Attempts to start the agent
-c:\zabbix\zabbix_agentd.exe --start
+$expStart = "& " + "'" + $agentExeFilePath + "'" +" --start "
+Invoke-Expression $expStart
 
 # Creates a firewall rule for the Zabbix server
-New-NetFirewallRule -DisplayName "Allow Zabbix communication" -Direction Inbound -Program "c:\zabbix\zabbix_agentd.exe" -RemoteAddress LocalSubnet -Action Allow
+New-NetFirewallRule -DisplayName "Allow Zabbix communication" -Direction Inbound -Program $agentExeFilePath -RemoteAddress $ServerIP -Action Allow
+
